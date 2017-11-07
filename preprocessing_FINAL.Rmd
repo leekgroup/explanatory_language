@@ -1,0 +1,93 @@
+---
+title: "Pre-processing for explanatory language trial"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+### Load necessary libraries for analysis
+```{r}
+library(readr)
+library(dplyr)
+library(devtools)
+```
+
+### Read in data from original experiment in January 2013
+```{r}
+results1 <- read_csv("dataanalysis-001 Quiz 1 responses_092916.csv")
+```
+There are 2 parsing errors, resulting from issues in the data file received from the course's online platform.  Row 37046 has 67 columns instead of the expected 64.  Row 37061 has 110 columns instead of the expected 64.  In each case, manual inspection of the .csv file shows an issue with a missing EOL between two student sessions.  EOL is added manually to the .csv file and resulting file is saved as: 
+
+"dataanalysis-001 Quiz 1 responses_092916_edit.csv"
+
+### Read in data from replication experiment in October 2013
+```{r}
+results2 <- read_csv("dataanalysis-002 Quiz 1 responses_092916.csv")
+```
+There are 3 parsing errors, resulting from issues in the data file received from the course's online platform.  Row 1431 has a delimited error in the submission_time variable.  Row 1446 has 114 columns instead of the expected 64.  Row 1461 has 116 columns instead of the expected 64.  In each case, manual inspection of the .csv file shows an issue with a missing EOL between two student sessions.  EOL is added manually to the .csv file and resulting file is saved as: 
+
+"dataanalysis-002 Quiz 1 responses_092916_edit.csv"
+
+### Read in the edited .csv files for the original (results1) and replicated (results2) experiments
+```{r}
+results1 <- read_csv("dataanalysis-001 Quiz 1 responses_092916_edit.csv")
+results2 <- read_csv("dataanalysis-002 Quiz 1 responses_092916_edit.csv")
+```
+The new parsing errors warn that the student sessions we manually separated are not complete.  The missing values are filled in with NA.
+
+
+### De-identifying data
+
+First we replace the identifiable "session_user_id" with a randomly assigned number.
+```{r}
+results1[1:2,1:4]
+results2[1:2,1:4]
+
+## January 2013 course
+temp1 <- as.numeric(factor(results1$session_user_id))
+n1 <- length(temp1); n1
+n_unique1 <- length(unique(temp1)); n_unique1
+perm_vector1 <- sample(1:n_unique1, n_unique1, replace=FALSE)
+results1$session_user_id[3:n1] <- perm_vector1[temp1[3:n1]] 
+## First 2 lines of data frame are text, not user sessions
+
+## October 2013 course
+temp2 <- as.numeric(factor(results2$session_user_id))
+n2 <- length(temp2); n2
+n_unique2 <- length(unique(temp2)); n_unique2
+perm_vector2 <- sample(1:n_unique2, n_unique2, replace=FALSE)
+results2$session_user_id[3:n2] <- perm_vector2[temp2[3:n2]] 
+## First 2 lines of data frame are text, not user sessions
+```
+Since the first two elements of this variable are repeated text and not student sessions, there are `r n1 `-1 rows and `r n_unique1`-1 unique user session IDs in the data from the January 2013 course.  There are `r n2`-1 rows and `r n_unique2`-1 unique user session IDs in the data from the October 2013 course.  We preserve the first two text elements of the variable.
+
+Next we replace the identifiable "access_group_id" and "submission_time" with "NA", again preserving the first two text elements of each variable.
+```{r}
+results1$access_group_id[3:n1] <- NA
+results1$submission_time[3:n1] <- NA
+
+results2$access_group_id[3:n2] <- NA
+results2$submission_time[3:n2] <- NA
+```
+
+Finally, we replace identifiable "submission_id" values for each user (session_user_id) with unidentifiable values that preserve the order of submissions within a user. Again, we preserve the first two text elements.
+```{r}
+temp1 <- results1 %>% group_by(session_user_id) %>% mutate(submission_order=rank(as.numeric(submission_id)))
+results1$submission_id[3:n1] <- temp1$submission_order[3:n1]
+temp2 <- results2 %>% group_by(session_user_id) %>% mutate(submission_order=rank(as.numeric(submission_id)))
+results2$submission_id[3:n2] <- temp2$submission_order[3:n2]
+```
+
+### Write de-identified data to new files
+
+```{r}
+write.csv(results1, file="dataanalysis-001 Quiz 1 responses_092916_deidentified.csv", row.names=FALSE)
+write.csv(results2, file="dataanalysis-002 Quiz 1 responses_092916_deidentified.csv", row.names=FALSE)
+```
+
+### Session info
+```{r}
+session_info()
+```
+

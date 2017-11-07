@@ -1,0 +1,330 @@
+---
+title: "Analysis for explanatory language trial"
+output: html_document
+---
+
+### Load necessary libraries for analysis
+```{r}
+library(readr)
+library(dplyr)
+library(devtools)
+```
+
+### Read in the de-identified .csv files for the original (results1) and replicated (results2) experiments
+```{r}
+results1 <- read_csv("dataanalysis-001 Quiz 1 responses_092916_deidentified.csv")
+results2 <- read_csv("dataanalysis-002 Quiz 1 responses_092916_deidentified.csv")
+```
+
+### Clean data
+
+The function *checkAndCleanData* does the following:
+
+* Selects and renames the appropriate quiz questions for our experiment
+* Subsets to only the first submission (lowest *submission_id*) for each student (*session_user_id*)
+* Creates a variable denoting treatment group (*prompt*: clang, noclang)
+* Removes students with missing data (those who didn't answer our question)
+* Creates a variable denoting possible answer choices (*answerOptions*: IDCP, IDCM, IDPM, ICPM)
+* Creates a variable denoting student's answer choice (*answerChoice*: inferential, descriptive, causal, predictive, mechanistic)
+* Returns resulting clean data frame (*cleanResults*)
+```{r}
+.miss <- function(vec) {
+    vec=="0" | vec=="NULL"
+}
+
+checkAndCleanData <- function(results) {
+    # Select the columns pertaining to the experimental quiz question
+    whCols <- grep("We take a random sample of individuals", results[1,])
+
+    # Rename columns
+    newColnames <- rep("noclang", length(whCols))
+    newColnames[grep("benzene", results[1,whCols])] <- "clang"
+    answerChoices <- gsub("This is an example of a(n)* ", "", results[2,whCols])
+    answerChoices <- gsub(" data analysis(.)*", "", answerChoices)
+    newColnames <- paste0(newColnames, "_", answerChoices)
+    colnames(results)[whCols] <- newColnames
+
+    rowStartResults <- which.max(results[,1] != "session_user_id")
+    
+    #Keep session_user_id, submission_id, and  questions
+    results <- results[rowStartResults:nrow(results), c(1,4,whCols)]
+
+    colsNoclang <- grep("^noclang_", colnames(results))
+    colsClang <- grep("^clang_", colnames(results))
+    checkMat <- cbind(rowSums(!.miss(results[,colsNoclang])),
+        rowSums(!.miss(results[,colsClang])))
+
+    # There should be no 2's (this would indicate a student answering both versions in the same quiz attempt)
+    # 0's indicate that the student did not check a response
+    print("Checking if students answered both versions in the same quiz attempt (no 2's)")
+    print(table(rowSums(checkMat)))
+
+    # Get the first submission for each session_user_id
+    results <- results %>% subset(submission_id=="1")
+
+    print("Should be 0 or 1...")
+    print(table(rowSums(results[,colsNoclang]=="1")))
+    print("Should be 0 or 1...")
+    print(table(rowSums(results[,colsClang]=="1")))
+    results$sawNoclang <- rowSums(results[,colsNoclang]=="1")==1
+    results$sawClang <- rowSums(results[,colsClang]=="1")==1
+    print("There should be no counts in TRUE-TRUE")
+    print(table(sawClang = results$sawClang, sawNoclang = results$sawNoclang))
+
+    # Only keep rows where a student answered question
+    results <- results[results$sawClang | results$sawNoclang,]
+    results <- results[!is.na(results$sawClang) & !is.na(results$sawNoclang),]
+    
+    # Create one variable for which prompt was seen
+    results$prompt <- factor(ifelse(results$sawClang, "clang", "noclang"))
+
+    # Get answer choices picked by the students in one variable
+    answerChoiceCol <- sapply(1:nrow(results), function(r) {
+        which(results[r,c(colsNoclang, colsClang)]=="1")
+    })
+    results$answerChoice <- factor(answerChoices[answerChoiceCol])
+
+    #Get answer options that the student saw
+    #I=inferential (1), D=descriptive (2), C=causal (3), P=predictive (4), M=mechanistic (5)
+    #Possibilities are IDCP, IDCM, IDPM, ICPM
+    answerOptions <- rep(NA, nrow(results))
+    temp3 <- sapply(1:nrow(results), function(r) {
+        temp4 = which(results[r,c(colsNoclang, colsClang)]!="NULL")
+        #paste(temp4,collapse="")
+        substr(paste(temp4,collapse=""),1,4)
+    })
+    answerOptions[temp3 == "1234"] <- "IDCP"
+    answerOptions[temp3 == "1235"] <- "IDCM"
+    answerOptions[temp3 == "1245"] <- "IDPM"
+    answerOptions[temp3 == "1345"] <- "ICPM"
+    
+    table(answerOptions)
+    
+    results$answerOptions <- as.factor(answerOptions)
+    
+    cleanResults = results
+    cleanResults
+}
+```
+The function *getSubsetTable* does the following:
+
+* Tables the clean results (*cleanResults*) by the answer choice (*answerChoice*) and treatment group (*prompt*) for the designated subset of answer choices (*answerOptions*: IDCP, IDCM, IDPM, ICPM)
+```{r}
+getSubsetTable <- function(cleanResults, subset) {   
+    cleanResultsSubset <- cleanResults %>% filter(answerOptions==subset)
+    table(cleanResultsSubset$answerChoice, cleanResultsSubset$prompt)
+}
+```
+
+### Get clean data
+```{r}
+cleanResults1 <- checkAndCleanData(results1)  ## January 2013 course
+cleanResults2 <- checkAndCleanData(results2)  ## October 2013 course
+```
+
+
+### Results for answer choices: inferentual, descriptive, causal, predictive
+
+Summarized student results (counts and percentages) for each answer choice (January 2013 course):
+```{r}
+## January 2013 course
+
+tab1_IDCP <- getSubsetTable(cleanResults1, "IDCP")
+addmargins(tab1_IDCP)
+proptab1_IDCP <- prop.table(tab1_IDCP, margin=2)
+round(proptab1_IDCP*100,1)
+```
+Total percentage of students who correctly answered "inferential" (January 2013 course):
+```{r}
+## January 2013 course
+inferential1_IDCP = tab1_IDCP["inferential",]
+totals1_IDCP = addmargins(tab1_IDCP)["Sum",][1:2]
+sum(inferential1_IDCP)/sum(totals1_IDCP)
+```
+
+Summarized student results (counts and percentages) for each answer choice (October 2013 course):
+```{r}
+## October 2013 course
+tab2_IDCP <- getSubsetTable(cleanResults2, "IDCP")
+addmargins(tab2_IDCP)
+proptab2_IDCP <- prop.table(tab2_IDCP, margin=2)
+round(proptab2_IDCP*100,1)
+```
+Total percentage of students who correctly answered "inferential" (October 2013 course):
+```{r}
+## October 2013 course
+inferential2_IDCP = tab2_IDCP["inferential",]
+totals2_IDCP = addmargins(tab2_IDCP)["Sum",][1:2]
+sum(inferential2_IDCP)/sum(totals2_IDCP)
+```
+
+Results of a two-proportions test, comparing the proportion of students who claimed analysis was "causal" between the explanatory language (*clang*) and non-explanatory language (*noclang*) treatment groups (January 2013 course):
+```{r}
+## January 2013 course
+causal1_IDCP = tab1_IDCP["causal",]
+totals1_IDCP = addmargins(tab1_IDCP)["Sum",][1:2]
+prop.test(causal1_IDCP, totals1_IDCP)
+```
+Results of a two-proportions test, comparing the proportion of students who claimed analysis was "causal" between the explanatory language (*clang*) and non-explanatory language (*noclang*) treatment groups (October 2013 course):
+```{r}
+## October 2013 course
+causal2_IDCP = tab2_IDCP["causal",]
+totals2_IDCP = addmargins(tab2_IDCP)["Sum",][1:2]
+prop.test(causal2_IDCP, totals2_IDCP)
+```
+
+### Results for answer choices: inferentual, descriptive, causal, mechanistic
+
+Summarized student results (counts and percentages) for each answer choice (January 2013 course):
+```{r}
+## January 2013 course
+
+tab1_IDCM <- getSubsetTable(cleanResults1, "IDCM")
+addmargins(tab1_IDCM)
+proptab1_IDCM <- prop.table(tab1_IDCM, margin=2)
+round(proptab1_IDCM*100,1)
+```
+Total percentage of students who correctly answered "inferential" (January 2013 course):
+```{r}
+## January 2013 course
+inferential1_IDCM = tab1_IDCM["inferential",]
+totals1_IDCM = addmargins(tab1_IDCM)["Sum",][1:2]
+sum(inferential1_IDCM)/sum(totals1_IDCM)
+```
+
+Summarized student results (counts and percentages) for each answer choice (October 2013 course):
+```{r}
+## October 2013 course
+tab2_IDCM <- getSubsetTable(cleanResults2, "IDCM")
+addmargins(tab2_IDCM)
+proptab2_IDCM <- prop.table(tab2_IDCM, margin=2)
+round(proptab2_IDCM*100,1)
+```
+Total percentage of students who correctly answered "inferential" (October 2013 course):
+```{r}
+## October 2013 course
+inferential2_IDCM = tab2_IDCM["inferential",]
+totals2_IDCM = addmargins(tab2_IDCM)["Sum",][1:2]
+sum(inferential2_IDCM)/sum(totals2_IDCM)
+```
+
+Results of a two-proportions test, comparing the proportion of students who claimed analysis was "causal" between the explanatory language (*clang*) and non-explanatory language (*noclang*) treatment groups (January 2013 course):
+```{r}
+## January 2013 course
+causal1_IDCM = tab1_IDCM["causal",]
+totals1_IDCM = addmargins(tab1_IDCM)["Sum",][1:2]
+prop.test(causal1_IDCM, totals1_IDCM)
+```
+Results of a two-proportions test, comparing the proportion of students who claimed analysis was "causal" between the explanatory language (*clang*) and non-explanatory language (*noclang*) treatment groups (October 2013 course):
+```{r}
+## October 2013 course
+causal2_IDCM = tab2_IDCM["causal",]
+totals2_IDCM = addmargins(tab2_IDCM)["Sum",][1:2]
+prop.test(causal2_IDCM, totals2_IDCM)
+```
+
+
+### Results for answer choices: inferentual, descriptive, predictive, mechanistic
+
+Summarized student results (counts and percentages) for each answer choice (January 2013 course):
+```{r}
+## January 2013 course
+
+tab1_IDPM <- getSubsetTable(cleanResults1, "IDPM")
+addmargins(tab1_IDPM)
+proptab1_IDPM <- prop.table(tab1_IDPM, margin=2)
+round(proptab1_IDPM*100,1)
+```
+Total percentage of students who correctly answered "inferential" (January 2013 course):
+```{r}
+## January 2013 course
+inferential1_IDPM = tab1_IDPM["inferential",]
+totals1_IDPM = addmargins(tab1_IDPM)["Sum",][1:2]
+sum(inferential1_IDPM)/sum(totals1_IDPM)
+```
+
+Summarized student results (counts and percentages) for each answer choice (October 2013 course):
+```{r}
+## October 2013 course
+tab2_IDPM <- getSubsetTable(cleanResults2, "IDPM")
+addmargins(tab2_IDPM)
+proptab2_IDPM <- prop.table(tab2_IDPM, margin=2)
+round(proptab2_IDPM*100,1)
+```
+Total percentage of students who correctly answered "inferential" (October 2013 course):
+```{r}
+## October 2013 course
+inferential2_IDPM = tab2_IDPM["inferential",]
+totals2_IDPM = addmargins(tab2_IDPM)["Sum",][1:2]
+sum(inferential2_IDPM)/sum(totals2_IDPM)
+```
+
+Results of a two-proportions test, comparing the proportion of students who claimed analysis was "inferential" between the explanatory language (*clang*) and non-explanatory language (*noclang*) treatment groups (January 2013 course):
+```{r}
+## January 2013 course
+inferential1_IDPM = tab1_IDPM["inferential",]
+totals1_IDPM = addmargins(tab1_IDPM)["Sum",][1:2]
+prop.test(inferential1_IDPM, totals1_IDPM)
+```
+Results of a two-proportions test, comparing the proportion of students who claimed analysis was "causal" between the explanatory language (*clang*) and non-explanatory language (*noclang*) treatment groups (October 2013 course):
+```{r}
+## October 2013 course
+inferential2_IDPM = tab2_IDPM["inferential",]
+totals2_IDPM = addmargins(tab2_IDPM)["Sum",][1:2]
+prop.test(inferential2_IDPM, totals2_IDPM)
+```
+
+### Results for answer choices: inferentual, causal, predictive, mechanistic
+
+Summarized student results (counts and percentages) for each answer choice (January 2013 course):
+```{r}
+## January 2013 course
+
+tab1_ICPM <- getSubsetTable(cleanResults1, "ICPM")
+addmargins(tab1_ICPM)
+proptab1_ICPM <- prop.table(tab1_ICPM, margin=2)
+round(proptab1_ICPM*100,1)
+```
+Total percentage of students who correctly answered "inferential" (January 2013 course):
+```{r}
+## January 2013 course
+inferential1_ICPM = tab1_ICPM["inferential",]
+totals1_ICPM = addmargins(tab1_ICPM)["Sum",][1:2]
+sum(inferential1_ICPM)/sum(totals1_ICPM)
+```
+
+Summarized student results (counts and percentages) for each answer choice (October 2013 course):
+```{r}
+## October 2013 course
+tab2_ICPM <- getSubsetTable(cleanResults2, "ICPM")
+addmargins(tab2_ICPM)
+proptab2_ICPM <- prop.table(tab2_ICPM, margin=2)
+round(proptab2_ICPM*100,1)
+```
+Total percentage of students who correctly answered "inferential" (October 2013 course):
+```{r}
+## October 2013 course
+inferential2_ICPM = tab2_ICPM["inferential",]
+totals2_ICPM = addmargins(tab2_ICPM)["Sum",][1:2]
+sum(inferential2_ICPM)/sum(totals2_ICPM)
+```
+
+Results of a two-proportions test, comparing the proportion of students who claimed analysis was "causal" between the explanatory language (*clang*) and non-explanatory language (*noclang*) treatment groups (January 2013 course):
+```{r}
+## January 2013 course
+causal1_ICPM = tab1_ICPM["causal",]
+totals1_ICPM = addmargins(tab1_ICPM)["Sum",][1:2]
+prop.test(causal1_ICPM, totals1_ICPM)
+```
+Results of a two-proportions test, comparing the proportion of students who claimed analysis was "causal" between the explanatory language (*clang*) and non-explanatory language (*noclang*) treatment groups (October 2013 course):
+```{r}
+## October 2013 course
+causal2_ICPM = tab2_ICPM["causal",]
+totals2_ICPM = addmargins(tab2_ICPM)["Sum",][1:2]
+prop.test(causal2_ICPM, totals2_ICPM)
+```
+
+### Session Info
+```{r}
+session_info()
+```
