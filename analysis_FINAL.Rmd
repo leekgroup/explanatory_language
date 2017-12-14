@@ -390,6 +390,12 @@ d1 = res1 %>%
 tab = table(d1$prompt, d1$answerChoice != "mechanistic")
 fisher.test(tab, workspace = 1e7)
 prop.test(tab)
+
+tab = table(d1$prompt, d1$answerChoice != "inferential")
+fisher.test(tab, workspace = 1e7)
+prop.test(tab)
+prop.table(tab, 1)
+
 ```
 
 ### Session Info
