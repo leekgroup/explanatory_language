@@ -8,6 +8,8 @@ output: html_document
 library(readr)
 library(dplyr)
 library(devtools)
+library(tidyr)
+library(ggplot2)
 ```
 
 ### Read in the de-identified .csv files for the original (results1) and replicated (results2) experiments
@@ -322,6 +324,72 @@ Results of a two-proportions test, comparing the proportion of students who clai
 causal2_ICPM = tab2_ICPM["causal",]
 totals2_ICPM = addmargins(tab2_ICPM)["Sum",][1:2]
 prop.test(causal2_ICPM, totals2_ICPM)
+```
+
+
+# Visualization and Mechanistic
+
+Trying to visualize the data overall:
+```{r}
+#########################
+# recoding
+res1 = cleanResults1 %>% 
+  mutate(ans = recode(answerOptions, 
+                      ICPM = "I_CPM",
+                      IDCM = "IDC_M",
+                      IDCP = "IDCP_",
+                      IDPM = "ID_PM")
+  )
+
+long1 = res1 %>% 
+  group_by(prompt, ans, answerChoice) %>% 
+  count() %>% 
+  ungroup
+long1 = long1 %>% 
+  group_by(prompt, ans) %>% 
+  mutate(pct = n/sum(n)) %>% 
+  ungroup()
+long1 = long1 %>% 
+  mutate()
+long1 %>% ggplot(aes(x = prompt , y = pct, fill = answerChoice)) +
+  geom_bar(stat = "identity") + facet_wrap(~ ans)
+```
+
+## Mechanistic p-values
+
+Looking at the small % increases, it still seems like mechanistic has an effect.  This is already reported in the paper:
+
+```{r}
+# looking at table 1
+d1 = res1 %>% 
+  filter(ans == "I_CPM") %>% 
+  mutate(prompt = factor(prompt, levels = c("noclang", "clang")))
+tab = table(d1$prompt, d1$answerChoice != "mechanistic")
+fisher.test(tab, workspace = 1e7)
+prop.test(tab)
+
+tab = table(d1$prompt, d1$answerChoice != "causal")
+fisher.test(tab, workspace = 1e7)
+prop.test(tab)
+
+tab = table( d1$prompt, !d1$answerChoice %in% c("mechanistic", "causal"))
+prop.test(tab)
+
+tab = table(d1$answerChoice, d1$prompt)
+prop.table(tab, margin = 2)
+fisher.test(tab, workspace = 1e7)
+```
+
+For when "causal" is not in the choices, it still seems as an increase in "mechanistic" choices, though not discussed that much in the paper:
+
+```{r}
+# looking at table 2
+d1 = res1 %>% 
+  filter(ans == "ID_PM") %>% 
+  mutate(prompt = factor(prompt, levels = c("noclang", "clang")))
+tab = table(d1$prompt, d1$answerChoice != "mechanistic")
+fisher.test(tab, workspace = 1e7)
+prop.test(tab)
 ```
 
 ### Session Info
